@@ -1,0 +1,49 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require 'bundler/setup'
+$LOAD_PATH.unshift File.expand_path('../lib', __dir__)
+require 'probe_runner'
+
+# ARGV から --provider <name> を抽出（位置を問わず先頭走査）
+provider = nil
+filtered = []
+i = 0
+while i < ARGV.size
+  arg = ARGV[i]
+  if arg == '--provider'
+    provider = ARGV[i + 1]
+    if provider.nil?
+      warn "--provider requires a value (sakura | openai)"
+      exit 1
+    end
+    i += 2
+  elsif arg.start_with?('--provider=')
+    provider = arg.split('=', 2).last
+    i += 1
+  else
+    filtered << arg
+    i += 1
+  end
+end
+
+ProbeRunner.set_provider(provider) if provider
+
+probe_name = filtered.shift
+unless probe_name
+  warn "Usage: bin/probe <probe_name> [--provider sakura|openai] [args...]"
+  warn "  probe_name: a_connect | b_models | c_schema | d_tools | e_streaming | f_vision | g_errors | h_params"
+  exit 1
+end
+
+probe_path = File.expand_path("../lib/probes/#{probe_name}.rb", __dir__)
+unless File.exist?(probe_path)
+  warn "Probe not found: #{probe_path}"
+  exit 1
+end
+
+require probe_path
+
+klass_name = probe_name.split('_').map(&:capitalize).join
+klass = Probes.const_get(klass_name)
+klass.run(*filtered)

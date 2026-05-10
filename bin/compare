@@ -1,0 +1,180 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# bin/compare <probe_name>
+#
+# tmp/probe_results/ から sakura__<probe>__*.json と openai__<probe>__*.json を読み、
+# シナリオごとの差分を表形式で標準出力に書き出す。
+# 旧形式（プロバイダ接頭辞なし）のファイルは無視する。
+
+require 'bundler/setup'
+require 'json'
+
+RESULT_DIR = File.expand_path('../tmp/probe_results', __dir__)
+PROVIDERS = %w[sakura openai].freeze
+
+# 比較で抽出する verdict 系キー（probe ごとに存在/非存在が分かれる）
+VERDICT_KEYS = %w[
+  status
+  duration_ms
+  ok
+  schema_compliant
+  content_is_valid_json
+  has_tool_calls
+  finish_reason
+  usage_chunk_seen
+  chunk_count
+  identical
+  choice_count
+  logprobs_present
+  error_message
+].freeze
+
+probe_name = ARGV.shift
+unless probe_name
+  warn 'Usage: bin/compare <probe_name>'
+  warn '  probe_name: a_connect | b_models | c_schema | d_tools | e_streaming | f_vision | g_errors | h_params'
+  exit 1
+end
+
+def find_file(probe, provider)
+  pattern = File.join(RESULT_DIR, "#{provider}__#{probe}__*.json")
+  files = Dir.glob(pattern)
+  return nil if files.empty?
+
+  # 同じ probe で複数モデルの結果があるとき（b_models 等を除き通常 1 つ）、最新を採用
+  files.max_by { |f| File.mtime(f) }
+end
+
+def load_result(path)
+  return nil unless path
+
+  JSON.parse(File.read(path))
+end
+
+# Hash の中から VERDICT_KEYS に該当する値を抽出する
+def extract_verdicts(scenario_value)
+  return { 'value' => scenario_value.inspect[0, 60] } unless scenario_value.is_a?(Hash)
+
+  out = {}
+  VERDICT_KEYS.each do |k|
+    out[k] = scenario_value[k] if scenario_value.key?(k)
+  end
+  out['error_class'] = scenario_value['class'] if scenario_value['class']
+  out
+end
+
+def format_value(v)
+  case v
+  when nil then '-'
+  when true then 'true'
+  when false then 'false'
+  when Numeric then v.to_s
+  else v.to_s[0, 30]
+  end
+end
+
+results = {}
+PROVIDERS.each do |p|
+  path = find_file(probe_name, p)
+  if path
+    results[p] = { path: path, data: load_result(path) }
+  else
+    warn "[warn] no result file for provider=#{p} probe=#{probe_name} (pattern: #{p}__#{probe_name}__*.json)"
+  end
+end
+
+if results.empty?
+  warn 'No result files found. Run bin/probe with each provider first.'
+  exit 1
+end
+
+puts "=== Compare probe=#{probe_name} ==="
+PROVIDERS.each do |p|
+  next unless results[p]
+
+  data = results[p][:data]
+  puts "  #{p.ljust(7)} : model=#{data['model']} api_base=#{data['api_base']} file=#{File.basename(results[p][:path])}"
+end
+
+# シナリオキー一覧を集約（順序は片側にあれば優先）
+scenario_keys = results.values.flat_map { |r| r[:data]['scenarios']&.keys || [] }.uniq
+
+if scenario_keys.empty?
+  puts 'No scenarios in result files.'
+  exit 0
+end
+
+# verdict キー一覧を集約
+verdict_keys_seen = []
+scenario_keys.each do |sk|
+  PROVIDERS.each do |p|
+    s = results.dig(p, :data, 'scenarios', sk)
+    next unless s
+
+    if s.is_a?(Hash) && sk == 'per_model'
+      verdict_keys_seen << 'per_model_summary'
+    else
+      extract_verdicts(s).each_key { |k| verdict_keys_seen << k }
+    end
+  end
+end
+verdict_keys_seen = verdict_keys_seen.uniq
+
+# 表形式出力
+header = ['scenario'.ljust(32), 'key'.ljust(22)] + PROVIDERS.map { |p| p.ljust(20) } + ['diff']
+puts "\n#{header.join(' | ')}"
+puts '-' * header.join(' | ').size
+
+scenario_keys.each do |sk|
+  scenario_data = PROVIDERS.to_h { |p| [p, results.dig(p, :data, 'scenarios', sk)] }
+
+  if sk == 'per_model'
+    # b_models 用の特殊扱い: モデル数と 200 数を比較
+    PROVIDERS.each do |p|
+      d = scenario_data[p]
+      next unless d.is_a?(Hash)
+
+      total = d.size
+      ok = d.values.count { |v| v.is_a?(Hash) && v['status'] == 200 }
+      puts format('%-32s | %-22s | %s', sk.to_s, "#{p}: #{ok}/#{total} (200/total)", '')
+    end
+    next
+  end
+
+  union_keys = scenario_data.values.compact.flat_map { |v| extract_verdicts(v).keys }.uniq
+  if union_keys.empty?
+    puts format('%-32s | %-22s | %s', sk.to_s, '(no verdict)', '')
+    next
+  end
+
+  union_keys.each do |k|
+    values = PROVIDERS.map do |p|
+      d = scenario_data[p]
+      next nil unless d.is_a?(Hash)
+
+      extract_verdicts(d)[k]
+    end
+    diff = values.uniq.size > 1 ? '!=' : '=='
+    cells = [
+      sk.to_s.ljust(32),
+      k.ljust(22)
+    ] + values.map { |v| format_value(v).ljust(20) } + [diff]
+    puts cells.join(' | ')
+  end
+  puts
+end
+
+# compat_verdict があれば末尾にも出す
+if results.values.any? { |r| r[:data]['compat_verdict'] }
+  puts '=== compat_verdict ==='
+  verdict_keys = results.values.flat_map { |r| r[:data].fetch('compat_verdict', {}).keys }.uniq
+  header2 = ['key'.ljust(40)] + PROVIDERS.map { |p| p.ljust(10) } + ['diff']
+  puts header2.join(' | ')
+  puts '-' * header2.join(' | ').size
+  verdict_keys.each do |k|
+    vals = PROVIDERS.map { |p| results.dig(p, :data, 'compat_verdict', k) }
+    diff = vals.uniq.size > 1 ? '!=' : '=='
+    puts (([k.ljust(40)] + vals.map { |v| format_value(v).ljust(10) } + [diff])).join(' | ')
+  end
+end

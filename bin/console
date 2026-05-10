@@ -1,0 +1,56 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require 'bundler/setup'
+$LOAD_PATH.unshift File.expand_path('../lib', __dir__)
+
+require 'probe_runner'
+require 'ruby_llm/schema'
+require 'irb'
+
+# ARGV から --provider を抽出
+provider = nil
+filtered = []
+i = 0
+while i < ARGV.size
+  arg = ARGV[i]
+  if arg == '--provider'
+    provider = ARGV[i + 1]
+    abort '--provider requires a value (sakura | openai)' if provider.nil?
+    i += 2
+  elsif arg.start_with?('--provider=')
+    provider = arg.split('=', 2).last
+    i += 1
+  else
+    filtered << arg
+    i += 1
+  end
+end
+ProbeRunner.set_provider(provider) if provider
+
+# IRB は ARGV を直接パースするため、抽出後の ARGV を反映してから起動する
+ARGV.replace(filtered)
+
+ProbeRunner.configure_ruby_llm
+MODELS_MODULE = ProbeRunner.models_module
+
+# 即試せるショートハンド
+def chat(model: ProbeRunner.default_chat_model, **opts)
+  ProbeRunner.chat(model: model, **opts)
+end
+
+def models
+  MODELS_MODULE
+end
+
+puts <<~BANNER
+  RubyLLM #{RubyLLM::VERSION} ready (provider: #{ProbeRunner.current_provider}, base: #{ProbeRunner.api_base})
+    chat                       => RubyLLM::Chat (model: #{ProbeRunner.default_chat_model})
+    chat(model: '<id>')        => 任意モデル
+    models                     => #{MODELS_MODULE.name} 定数群
+  例:
+    chat.ask('こんにちは').content
+    chat(model: '#{ProbeRunner.default_vision_model}').ask('画像の説明')
+BANNER
+
+IRB.start(__FILE__)
