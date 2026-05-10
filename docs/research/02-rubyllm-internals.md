@@ -55,7 +55,9 @@ end
                             それ以外: 'developer'
 ```
 
-既定値は `nil`（`Configuration.register_provider_options` 経由で `option :openai_use_system_role, nil`、`lib/ruby_llm/configuration.rb:17-19`、`lib/ruby_llm/providers/openai.rb:38-46`）。よって**何も設定しないと system メッセージが `developer` ロールで送られる**。OpenAI 公式 GPT-5 系/o-シリーズ向けの仕様だが、Sakura 配下のモデル（gpt-oss-120b 等）は `developer` ロールを未知ロールとして 400 で弾くか、無視するかが未知数。**さくらのAI Engine では `openai_use_system_role = true` を明示推奨**するのが安全（要実機検証）。
+既定値は `nil`（`Configuration.register_provider_options` 経由で `option :openai_use_system_role, nil`、`lib/ruby_llm/configuration.rb:17-19`、`lib/ruby_llm/providers/openai.rb:38-46`）。よって**何も設定しないと system メッセージが `developer` ロールで送られる**。OpenAI 公式 GPT-5 系/o-シリーズ向けの仕様。
+
+**Sakura での実機検証結果**: probe `a_connect` (`tmp/probe_results/sakura__a_connect__gpt-oss-120b.json`) で `gpt-oss-120b` 上の system / developer 双方を直接送出し、いずれも HTTP 200・同一の prompt_tokens 数（90）で受理されることを確認した。Sakura 公式 OpenAPI（[ai-engine-inference-api.json](https://manual.sakura.ad.jp/api/cloud/portal/openapis/ai-engine-inference-api.json)）でも `developer` は `ChatCompletionRequestDeveloperMessage` の許容 enum として明示定義されている。RubyLLM 経由で `with_instructions` + developer 送出（`scenario_rubyllm_system_role_off`）でも応答取得を確認。指定の有無による差は本検証範囲では観測されなかった。検証範囲は `gpt-oss-120b` のみで、他モデル（`llm-jp-3.1-8x13b-instruct4` 等）は vLLM の chat template に依存するため個別検証が必要。RubyLLM の既定 `developer` 送出は OpenAI reasoning モデル仕様に準拠しているため、reasoning モデル以前の旧 `system` ロール挙動に固定したい場合や、`developer` を受け付けない OpenAI 互換サーバを併用する場合のみ `openai_use_system_role = true` を明示する。
 
 ### 1.3 認証ヘッダ
 
@@ -384,9 +386,9 @@ context length 判定 (`error.rb:53-63, 103-107`) は message に対する正規
 
 OpenAI 公式仕様を前提とし、さくらのAI Engine で問題化しうる箇所を優先度順に列挙。
 
-### 6.1 system role を `developer` で送る既定挙動（高）
+### 6.1 system role を `developer` で送る既定挙動（参考）
 
-`openai_use_system_role` を未設定だと `:system` ロールが `'developer'` 文字列で送出される。Sakura の vLLM/SGLang 系サーバは `developer` ロールを未知扱いし、**400 エラーまたはサイレント無視**になる可能性がある。`true` を明示推奨。
+`openai_use_system_role` を未設定だと `:system` ロールが `'developer'` 文字列で送出される（OpenAI reasoning モデル仕様準拠）。`gpt-oss-120b` での実機検証では system / developer ともに HTTP 200・同一 prompt_tokens で受理され、Sakura OpenAPI も `developer` を許容 enum として定義しているため、**指定なしでも本検証範囲では問題は観測されない**（詳細は §1.2）。reasoning モデル以前の旧 `system` ロール挙動に固定したい場合や、`developer` を受け付けない OpenAI 互換サーバを併用する場合のみ `openai_use_system_role = true` を明示する。他モデルは vLLM の chat template 依存のため未検証。
 
 ### 6.2 構造化出力 payload の strict / additionalProperties（高）
 

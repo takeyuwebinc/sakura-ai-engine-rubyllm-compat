@@ -85,17 +85,16 @@
 
 #### M-06: 設定例のコメント表現の差
 
-- Matrix §10 (行 252-264) のコメント:
+- Matrix §10 のコメント:
   - `# ← /v1 まで含む`
   - `# ← 必須: モデル ID 衝突回避`
   - `# ← 必須: registry 未登録回避`
-  - `# 推奨: developer ロール送出を回避`
-- Draft §4.2 (行 102-119) のコメント:
+- Draft §4.2 のコメント:
   - `# 末尾の /v1 を含める`
   - `# 必須`
   - `# 必須`
-  - `# 推奨`
 - **判定**: コードは完全に同等、コメント詳細度のみ差異。Draft は表で別途理由を解説しているため重複回避と読める。**修正不要**。
+- **更新履歴**: 旧版は `c.openai_use_system_role = true` の `# 推奨: developer ロール送出を回避` / `# 推奨` の対比行を含んでいたが、当該設定が「任意」に格下げされた（[ChangeSpec 履歴](../change-specs/) の `relax-openai-use-system-role-recommendation.md`）ため、両ファイルから同設定行が削除され比較対象外となった。
 - **Ruby 構文**: 両者とも Ruby 4.0.2 で valid。
 
 ---
@@ -140,7 +139,7 @@
 
 7. **公式マニュアル表記揺れ**: `Phi-4-mini-instruct` → `preview/Phi-4-mini-instruct-cpu` 等の表記差（Matrix §3.3、TS-03、Draft §4.3 一致）。`Kimi-K2.5` 未提供も Matrix §3.3、Draft §4.3 で一致言及
 
-8. **RubyLLM 設定の必須/推奨 4 項目**: `provider: :openai`、`assume_model_exists: true`、`openai_api_base` 末尾 `/v1`、`openai_use_system_role: true` の 4 項目が Matrix §10 と Draft §4.2 で一致
+8. **RubyLLM 設定の必須/推奨 3 項目**: `provider: :openai`、`assume_model_exists: true`、`openai_api_base` 末尾 `/v1` の 3 項目が Matrix §10 と Draft §4.2 で一致。`openai_use_system_role` は実機検証と Sakura OpenAPI 仕様（`developer` 許容 enum）に基づき「任意」に格下げされ、整合性チェック対象から除外
 
 9. **`max_retries` 既定値 3、`request_timeout` 既定 300 秒**: TS-17/TS-18、Draft §5.4 一致
 
@@ -155,7 +154,7 @@
 14. **RubyLLM ソース行番号引用**:
     - `chat.rb:172-178`（構造化出力サイレントフォールバック）: Matrix §4.3、TS-04、Draft §5.1 一致
     - `openai/chat.rb:165-168`（extract_thinking_text）: Matrix §9、TS-06、Draft §6.1 一致
-    - `openai/chat.rb:135-142`（system role）: TS-15、Draft §4.2 表で一致言及
+    - `openai/chat.rb:135-142`（system role）: TS-15、Draft §4.2 ともに「`developer` 送出も Sakura OpenAPI で許容され、`gpt-oss-120b` 実機で system 送出と同等に受理される」方向で一致
     - `connection.rb:102-114`（リトライ）: TS-12、TS-17、Draft §5.4 一致
     - `tools.rb:73-101`（tool_call JSON parse 例外貫通）: TS-14、Draft §5.2 一致
     - `configuration.rb:46`（request_timeout 300）: TS-18 のみ（他文書では言及なし）

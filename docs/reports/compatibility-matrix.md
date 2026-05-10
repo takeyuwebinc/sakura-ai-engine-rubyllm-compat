@@ -284,7 +284,8 @@ OpenAPI 未定義のパラメータを `gpt-oss-120b` に送付した結果（`t
 RubyLLM.configure do |c|
   c.openai_api_key  = ENV.fetch('SAKURA_AI_ACCOUNT_KEY')
   c.openai_api_base = 'https://api.ai.sakura.ad.jp/v1'  # ← /v1 まで含む
-  c.openai_use_system_role = true                        # 推奨: developer ロール送出を回避
+  # 旧来の system ロール送出に固定したい場合のみ次行を追加（既定は OpenAI reasoning モデル仕様準拠で developer 送出）
+  # c.openai_use_system_role = true
 end
 
 chat = RubyLLM.chat(
@@ -299,7 +300,7 @@ chat = RubyLLM.chat(
 | `openai_api_base` 末尾の `/v1` | 必須 | Faraday URL 結合の挙動。`/v1` を抜くと `/chat/completions` を直叩きしてしまう |
 | `provider: :openai` | 必須 | RubyLLM models registry 内に同名モデル ID（azure/bedrock/openrouter 配下）が存在し、未指定だと意図しない provider が解決される |
 | `assume_model_exists: true` | 必須 | Sakura 提供モデルは registry 未登録のため `ModelNotFoundError` を回避 |
-| `openai_use_system_role: true` | 推奨 | 既定 `false` だと system メッセージが `developer` ロールとして送出される（実機では受理されたが、OpenAPI で許容ロールに含まれているとはいえ Sakura のモデル側で `developer` ロールが期待された動作をするかは不明確） |
+| `openai_use_system_role: true` | 任意 | RubyLLM 既定では system メッセージが `developer` ロールとして送出される（OpenAI の o1 / GPT-5 系 reasoning モデル仕様に準拠）。Sakura 公式 OpenAPI でも `developer` は許容 enum として定義されており、probe `a_connect` で `gpt-oss-120b` 上で system / developer 双方が同一の prompt_tokens 数（90）で 200 受理されることを確認済み（[sakura-openapi-vs-openai-compatibility.md §1](sakura-openapi-vs-openai-compatibility.md)）。reasoning モデル以前の旧 `system` ロール挙動に固定したい場合や、`developer` を受け付けない OpenAI 互換サーバを併用する場合のみ明示する。検証範囲は `gpt-oss-120b` のみで、他モデルは vLLM の chat template 依存で扱いが異なる可能性あり |
 
 ---
 

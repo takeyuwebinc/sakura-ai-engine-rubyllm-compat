@@ -271,17 +271,17 @@ next if parsed.dig('choices', 0, 'delta', 'content').nil? && !parsed['usage']
 **症状**: `chat.with_instructions('簡潔に返して').ask(...)` で長い回答が返る。
 
 **原因（候補）**:
-1. RubyLLM の `openai_use_system_role` が `nil`（既定）だと system メッセージが `developer` ロールとして送出される（`openai/chat.rb:135-142`）。Sakura のモデルが `developer` ロールを期待動作として扱うかは不明確。
-2. モデル側の system プロンプト追従度の差。
+1. モデル側の system プロンプト追従度の差。`gpt-oss-120b` のような MoE は短い system プロンプトに対する追従度が公式 OpenAI モデルと異なる。
+2. `openai_use_system_role` が `nil`（既定）だと system メッセージが `developer` ロールとして送出される（`openai/chat.rb:135-142`）が、Sakura 公式 OpenAPI で `developer` は許容 enum として定義されており、probe `a_connect` で `gpt-oss-120b` 上では system / developer 双方が同一の prompt_tokens 数（90）で 200 受理されることを確認済み。少なくとも `gpt-oss-120b` では「ロールが原因で system プロンプトが効かなくなる」現象は観測されていない。他モデル（llm-jp-3.1 等）は vLLM の chat template に依存するため未検証。
 
 **対処**:
-```ruby
-RubyLLM.configure do |c|
-  c.openai_use_system_role = true   # system → 'system' ロール送出に固定
-end
-```
-
-それでも効かない場合は user メッセージ側に指示を集約する（`'簡潔に返して。質問: ...'`）。
+- 第一の対処: user メッセージ側に指示を集約する（`'簡潔に返して。質問: ...'`）
+- 旧来の `system` ロール挙動に固定したい場合のオプション（既定の `developer` 送出は OpenAI reasoning モデル仕様準拠のため、reasoning モデル以外の挙動に揃えたい場合や `developer` 非対応の OpenAI 互換サーバ併用時に使用）:
+  ```ruby
+  RubyLLM.configure do |c|
+    c.openai_use_system_role = true   # system → 'system' ロール送出に固定
+  end
+  ```
 
 ---
 
